@@ -47,6 +47,12 @@ pub enum Outcome {
 #[derive(Default)]
 pub struct Session {
     resolved: BTreeMap<String, GitHubLocator>,
+    /// Trees already listed, keyed by snapshot.
+    ///
+    /// Safe to hold for a session's lifetime precisely because a snapshot is immutable: the
+    /// commit cannot change, so the listing cannot go stale. Caching a *ref* would be a
+    /// different thing entirely and is what section 16.2 forbids.
+    trees: BTreeMap<String, api::Tree>,
     handshaken: bool,
 }
 
@@ -183,18 +189,19 @@ impl Session {
                 "that snapshot was not resolved in this session",
             );
         };
-        match api::enumerate_tree(http, &locator, &snapshot, credential) {
-            Err(error) => refuse(error.code, &error.reason),
-            Ok(tree) => reply(json!({
-                "provider_protocol_version": PROTOCOL_VERSION,
-                "reply": "enumerate",
-                "entries": tree.entries.iter().map(|entry| json!({
-                    "path": entry.path,
-                    "bytes": entry.bytes,
-                    "content_id": entry.blob_id,
-                })).collect::<Vec<_>>(),
-            })),
-        }
+        let tree = match self.tree(http, &locator, &snapshot, credential) {
+            Err(error) => return refuse(error.code, &error.reason),
+            Ok(tree) => tree,
+        };
+        reply(json!({
+            "provider_protocol_version": PROTOCOL_VERSION,
+            "reply": "enumerate",
+            "entries": tree.entries.iter().map(|entry| json!({
+                "path": entry.path,
+                "bytes": entry.bytes,
+                "content_id": entry.blob_id,
+            })).collect::<Vec<_>>(),
+        }))
     }
 
     fn read(&mut self, request: &Value, http: &mut dyn Http, credential: Option<&str>) -> Outcome {
@@ -208,10 +215,10 @@ impl Session {
             return refuse(ProviderCode::RequestInvalid, "the request names no path");
         };
 
-        // The tree is listed again to turn a path into a blob id. A session cache belongs
-        // here and is increment 5's remaining work; correctness first, and a second request
-        // is the honest cost of not having it yet.
-        let tree = match api::enumerate_tree(http, &locator, &snapshot, credential) {
+        // Listed once per snapshot. Reading every file in a repository would otherwise
+        // cost one tree request per file, which for a repository of any size is the
+        // difference between one API call and thousands.
+        let tree = match self.tree(http, &locator, &snapshot, credential) {
             Ok(tree) => tree,
             Err(error) => return refuse(error.code, &error.reason),
         };
@@ -287,6 +294,26 @@ impl Session {
                 content,
             },
         }
+    }
+
+    /// The tree for a snapshot, listing it once.
+    ///
+    /// A failure is not cached. A rate limit or an unreachable host is a fact about this
+    /// moment, and remembering it would make one bad minute poison a session that could
+    /// otherwise recover.
+    fn tree(
+        &mut self,
+        http: &mut dyn Http,
+        locator: &GitHubLocator,
+        snapshot: &str,
+        credential: Option<&str>,
+    ) -> Result<api::Tree, api::ApiError> {
+        if let Some(held) = self.trees.get(snapshot) {
+            return Ok(held.clone());
+        }
+        let tree = api::enumerate_tree(http, locator, snapshot, credential)?;
+        self.trees.insert(snapshot.to_owned(), tree.clone());
+        Ok(tree)
     }
 
     /// The locator a snapshot identifier refers to, when this session resolved it.
@@ -601,5 +628,99 @@ mod tests {
             !refused.to_string().contains("ghp_secret_value"),
             "{refused}"
         );
+    }
+
+    /// Counts what was asked for, so a cache can be shown to work rather than assumed to.
+    struct Counting {
+        inner: Canned,
+        trees: usize,
+        fail_trees: usize,
+    }
+
+    impl Http for Counting {
+        fn get(
+            &mut self,
+            url: &str,
+            accept: &str,
+            credential: Option<&str>,
+        ) -> Result<Response, String> {
+            if url.contains("/git/trees/") {
+                self.trees += 1;
+                if self.fail_trees > 0 {
+                    self.fail_trees -= 1;
+                    return Ok(Response::new(503, ""));
+                }
+            }
+            self.inner.get(url, accept, credential)
+        }
+    }
+
+    fn counting(fail_trees: usize) -> Counting {
+        Counting {
+            inner: canned(),
+            trees: 0,
+            fail_trees,
+        }
+    }
+
+    fn resolve_into(session: &mut Session, http: &mut Counting) {
+        session.handle(
+            r#"{"provider_protocol_version":1,"request":"handshake"}"#,
+            http,
+            None,
+        );
+        session.handle(
+            r#"{"provider_protocol_version":1,"request":"resolve","locator":"github://example/payments/src/main.rs?ref=main"}"#,
+            http,
+            Some("s"),
+        );
+    }
+
+    #[test]
+    fn a_snapshots_tree_is_listed_once_however_many_files_are_read() {
+        // Reading every file in a repository would otherwise cost one tree request per
+        // file, which for a repository of any size is the difference between one API call
+        // and thousands. Safe because a snapshot is an immutable commit: the listing cannot
+        // go stale.
+        let (mut session, mut http) = (Session::new(), counting(0));
+        resolve_into(&mut session, &mut http);
+
+        for _ in 0..3 {
+            let outcome = session.handle(
+                r#"{"provider_protocol_version":1,"request":"read","snapshot":"0f1e2d3c","path":"src/main.rs"}"#,
+                &mut http,
+                Some("s"),
+            );
+            assert_eq!(content(&outcome), b"fn main() {}");
+        }
+        session.handle(
+            r#"{"provider_protocol_version":1,"request":"enumerate","snapshot":"0f1e2d3c"}"#,
+            &mut http,
+            Some("s"),
+        );
+        assert_eq!(http.trees, 1, "the tree was listed more than once");
+    }
+
+    #[test]
+    fn a_failed_listing_is_not_remembered() {
+        // A rate limit or an unreachable host is a fact about this moment. Remembering it
+        // would make one bad minute poison a session that could otherwise recover.
+        let (mut session, mut http) = (Session::new(), counting(1));
+        resolve_into(&mut session, &mut http);
+
+        let refused = line(&session.handle(
+            r#"{"provider_protocol_version":1,"request":"enumerate","snapshot":"0f1e2d3c"}"#,
+            &mut http,
+            Some("s"),
+        ));
+        assert_eq!(refused["code"], "PROVIDER_SOURCE_UNAVAILABLE");
+
+        let recovered = line(&session.handle(
+            r#"{"provider_protocol_version":1,"request":"enumerate","snapshot":"0f1e2d3c"}"#,
+            &mut http,
+            Some("s"),
+        ));
+        assert_eq!(recovered["reply"], "enumerate");
+        assert_eq!(http.trees, 2, "the retry must actually have asked again");
     }
 }
