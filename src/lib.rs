@@ -30,6 +30,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod locator;
+
 /// The provider protocol version this build speaks.
 ///
 /// Stated here rather than inferred, so a build that has not implemented a version cannot
