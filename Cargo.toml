@@ -1,0 +1,38 @@
+[package]
+name = "nostdb-provider-github"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "NostDB GitHub source and graph-store provider: an out-of-process executable that retrieves bytes and metadata over the versioned provider protocol."
+publish = false
+
+[lib]
+name = "nostdb_provider_github"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nostdb-provider-github"
+path = "src/main.rs"
+
+[lints.rust]
+missing_docs = "deny"
+
+[lints.clippy]
+missing_errors_doc = "deny"
+missing_panics_doc = "deny"
+
+# Dependency review:
+#
+# This crate has no dependencies yet, and the first one it takes will be an HTTP client,
+# which is the decision this section exists to force into the open when it happens.
+#
+# The provider protocol is line-delimited JSON, so reading and writing messages needs a JSON
+# library and nothing more. Whether that is `serde_json` — as every sibling crate already
+# uses — is settled when the first message is parsed rather than guessed at here.
+#
+# What this crate must not take a dependency on is `nostdb-core`. A provider retrieves bytes
+# and metadata; only the Engine interprets `.nost` or `.nostdb`. Linking the Engine would
+# make it possible to parse either by accident, and the ownership boundary exists precisely
+# because that possibility is what a second parser grows out of.
+[dependencies]
