@@ -31,6 +31,7 @@
 #![forbid(unsafe_code)]
 
 pub mod api;
+pub mod client;
 pub mod http;
 pub mod locator;
 pub mod serve;

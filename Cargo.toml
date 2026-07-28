@@ -38,12 +38,24 @@ missing_panics_doc = "deny"
 #             everywhere would trade a reviewed implementation for an unreviewed one, at a
 #             place where being wrong is silent.
 #
-# There is still no HTTP client here, and that is deliberate rather than pending. Everything
-# this crate does with HTTP — building a request, reading a response, deciding what a status
-# means — is expressed against the `Http` trait in `src/http.rs` and tested against recorded
-# responses. Choosing a client is therefore a decision about *one* implementation of that
-# trait rather than a decision the whole crate is built on top of, and it can be argued on
-# its own merits when it is made.
+# ureq        Purpose: the one implementation of the `Http` trait that actually reaches
+#             GitHub. Maintained by the algesten/ureq project, dual MIT/Apache-2.0.
+#
+#             Chosen over `reqwest` because this provider is synchronous by design: it reads
+#             one request line, answers it, and reads the next. `reqwest` is async first and
+#             would bring an executor into a program with nothing to schedule — a runtime,
+#             its dependency tree, and a class of bug (a blocked reactor, a runtime nested in
+#             a runtime) that a line-oriented process has no reason to own.
+#
+#             It reaches TLS through rustls rather than the platform's OpenSSL, so a build
+#             does not depend on what a machine happens to have installed. That matters more
+#             than usual here: this executable is bundled into official distributions, so a
+#             link-time dependency on a system library would be a support burden on every
+#             platform it ships to.
+#
+#             Confined to `src/client.rs`. Everything else speaks the `Http` trait, so
+#             replacing this is one file and no test changes — which is what the trait was
+#             for and is the reason this choice did not have to be made earlier.
 #
 # What this crate must not take a dependency on is `nostdb-core`. A provider retrieves bytes
 # and metadata; only the Engine interprets `.nost` or `.nostdb`. Linking the Engine would
@@ -52,3 +64,4 @@ missing_panics_doc = "deny"
 [dependencies]
 serde_json = "1"
 sha2 = "0.10"
+ureq = "3"
