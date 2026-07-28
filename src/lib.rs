@@ -30,6 +30,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod api;
+pub mod http;
 pub mod locator;
 
 /// The provider protocol version this build speaks.

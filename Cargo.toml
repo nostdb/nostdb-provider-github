@@ -24,15 +24,21 @@ missing_panics_doc = "deny"
 
 # Dependency review:
 #
-# This crate has no dependencies yet, and the first one it takes will be an HTTP client,
-# which is the decision this section exists to force into the open when it happens.
+# serde_json  Purpose: the provider protocol is line-delimited JSON, and GitHub's API answers
+#             in JSON. Widely used, actively maintained by the Serde maintainers, dual
+#             MIT/Apache-2.0. Every sibling crate in this workspace already depends on it, so
+#             it adds nothing to the workspace's overall surface.
 #
-# The provider protocol is line-delimited JSON, so reading and writing messages needs a JSON
-# library and nothing more. Whether that is `serde_json` — as every sibling crate already
-# uses — is settled when the first message is parsed rather than guessed at here.
+# There is still no HTTP client here, and that is deliberate rather than pending. Everything
+# this crate does with HTTP — building a request, reading a response, deciding what a status
+# means — is expressed against the `Http` trait in `src/http.rs` and tested against recorded
+# responses. Choosing a client is therefore a decision about *one* implementation of that
+# trait rather than a decision the whole crate is built on top of, and it can be argued on
+# its own merits when it is made.
 #
 # What this crate must not take a dependency on is `nostdb-core`. A provider retrieves bytes
 # and metadata; only the Engine interprets `.nost` or `.nostdb`. Linking the Engine would
 # make it possible to parse either by accident, and the ownership boundary exists precisely
 # because that possibility is what a second parser grows out of.
 [dependencies]
+serde_json = "1"
