@@ -33,6 +33,7 @@
 pub mod api;
 pub mod http;
 pub mod locator;
+pub mod serve;
 
 /// The provider protocol version this build speaks.
 ///

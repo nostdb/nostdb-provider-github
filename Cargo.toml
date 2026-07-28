@@ -29,6 +29,15 @@ missing_panics_doc = "deny"
 #             MIT/Apache-2.0. Every sibling crate in this workspace already depends on it, so
 #             it adds nothing to the workspace's overall surface.
 #
+# sha2        Purpose: the digest a materialize reply carries, so the Engine has something to
+#             check the artifact against. Maintained by the RustCrypto project, dual
+#             MIT/Apache-2.0, and already a dependency of nostdb-core — the same algorithm
+#             computed by the same implementation on both sides of the check.
+#
+#             Hand-writing SHA-256 to avoid a dependency the workspace already uses
+#             everywhere would trade a reviewed implementation for an unreviewed one, at a
+#             place where being wrong is silent.
+#
 # There is still no HTTP client here, and that is deliberate rather than pending. Everything
 # this crate does with HTTP — building a request, reading a response, deciding what a status
 # means — is expressed against the `Http` trait in `src/http.rs` and tested against recorded
@@ -42,3 +51,4 @@ missing_panics_doc = "deny"
 # because that possibility is what a second parser grows out of.
 [dependencies]
 serde_json = "1"
+sha2 = "0.10"

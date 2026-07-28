@@ -83,7 +83,13 @@ fi
 
 # The same boundary from the other side. A provider that opened a database, or wrote one,
 # would be doing the Engine's job with none of the Engine's invariants.
-if [ -d src ] && grep -rnE '\.nostdb["'"'"']|open_database|commit_graph' src; then
+#
+# The pattern matches Engine API calls, not paths. An earlier version also rejected any
+# mention of a `.nostdb` path and fired on a test fixture — which was not merely noisy but
+# wrong: naming a `.nostdb` file is exactly what a graph locator does, and it is this
+# provider's job in the graph_store role. A check that forbids the thing the component is
+# for is one people learn to work around.
+if [ -d src ] && grep -rnE '\b(open_database|commit_graph|read_graph|Database::)' src; then
   echo "a provider must not open or write a database" >&2
   exit 1
 fi
