@@ -42,6 +42,69 @@ pub const PROVIDER_NAME: &str = "github";
 /// The locator scheme this provider reads.
 pub const LOCATOR_SCHEME: &str = "github://";
 
+/// A refusal this provider can reply with.
+///
+/// Declared here even though no request is served yet. These codes are part of the protocol
+/// this crate speaks, so the crate owning them is a fact about the contract rather than
+/// about how much of it is built — and the workspace verifier checks that the registry's
+/// owner and the source that declares them agree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProviderCode {
+    /// The request's protocol version is not implemented.
+    ProtocolUnsupported,
+    /// The request is malformed or names a kind this version does not define.
+    RequestInvalid,
+    /// The locator is not one this provider reads.
+    LocatorInvalid,
+    /// The source needs a credential that was not supplied.
+    ///
+    /// Never downgraded to an anonymous request: that turns a permissions problem into a
+    /// "repository not found" and sends whoever hits it looking in the wrong place.
+    CredentialRequired,
+    /// The host refused the credential.
+    CredentialRejected,
+    /// The host could not be reached, or has no such snapshot.
+    ///
+    /// Not a build failure. The link remains declared, and a query returns what it can
+    /// reach.
+    SourceUnavailable,
+    /// A host quota or rate limit was reached.
+    LimitExceeded,
+}
+
+impl ProviderCode {
+    /// Every code, so a test can walk them.
+    pub const ALL: [Self; 7] = [
+        Self::ProtocolUnsupported,
+        Self::RequestInvalid,
+        Self::LocatorInvalid,
+        Self::CredentialRequired,
+        Self::CredentialRejected,
+        Self::SourceUnavailable,
+        Self::LimitExceeded,
+    ];
+
+    /// The symbolic name a reply carries.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ProtocolUnsupported => "PROVIDER_PROTOCOL_UNSUPPORTED",
+            Self::RequestInvalid => "PROVIDER_REQUEST_INVALID",
+            Self::LocatorInvalid => "PROVIDER_LOCATOR_INVALID",
+            Self::CredentialRequired => "PROVIDER_CREDENTIAL_REQUIRED",
+            Self::CredentialRejected => "PROVIDER_CREDENTIAL_REJECTED",
+            Self::SourceUnavailable => "PROVIDER_SOURCE_UNAVAILABLE",
+            Self::LimitExceeded => "PROVIDER_LIMIT_EXCEEDED",
+        }
+    }
+}
+
+impl std::fmt::Display for ProviderCode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,6 +115,14 @@ mod tests {
         // specification is the authority; this constant only says which of its versions is
         // spoken here.
         assert_eq!(PROVIDER_PROTOCOL_VERSION, 1);
+    }
+
+    #[test]
+    fn every_code_is_distinct_and_carries_the_registry_prefix() {
+        let names: std::collections::BTreeSet<&str> =
+            ProviderCode::ALL.iter().map(|code| code.as_str()).collect();
+        assert_eq!(names.len(), ProviderCode::ALL.len());
+        assert!(names.iter().all(|name| name.starts_with("PROVIDER_")));
     }
 
     #[test]
