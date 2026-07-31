@@ -140,4 +140,20 @@ fi
 # There is deliberately no "the Engine dependency is pinned" check here, which every
 # sibling repository has. This one forbids the dependency outright above, and a pinning rule
 # beside a prohibition would read as permission to add it as long as the pin is right.
+# The Rust command set the root contract requires of every Rust repository, which this one did not run.
+#
+# `--locked` is the point of adding it now. The release workflow builds this provider with `--locked`, and
+# nothing here built at all — so a `Cargo.toml` version bumped without its `Cargo.lock` passed every local
+# gate and failed all four targets of a release, which is the most expensive place to learn it.
+if [ -f Cargo.toml ]; then
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "cargo is required to verify the provider" >&2
+    exit 1
+  fi
+  cargo fmt --check
+  cargo check --locked --all-targets --all-features
+  cargo clippy --all-targets --all-features -- -D warnings
+  cargo test --all-targets --all-features
+fi
+
 echo "nostdb-provider-github verification passed"
